@@ -1,0 +1,36 @@
+version: "3.9"
+
+services:
+  ollama:
+    image: ollama/ollama
+    ports:
+      - "11434:11434"
+
+  orchestrator:
+    build: ./orchestrator
+    ports:
+      - "5000:5000"
+    env_file:
+      - .env
+    depends_on:
+      - tutor
+      - assessment
+      - ollama
+
+  tutor:
+    build: ./tutor
+    ports:
+      - "5001:5001"
+    env_file:
+      - .env
+    depends_on:
+      - ollama
+
+  assessment:
+    build: ./assessment
+    ports:
+      - "5002:5002"
+    env_file:
+      - .env
+    depends_on:
+      - ollama
