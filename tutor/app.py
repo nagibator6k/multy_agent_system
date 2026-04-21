@@ -1,6 +1,6 @@
 from flask import Flask, request, jsonify
 import requests
-from rag import search
+from rag.rag import search
 from langfuse_config import langfuse
 from shared.tokens import count_tokens
 
@@ -24,28 +24,20 @@ def run():
 {user_input}
 """
 
-    with langfuse.start_as_current_observation(
-        name="tutor",
-        as_type="generation",
-        input=prompt,
-        model="qwen2.5:3b"
-    ) as gen:
-
+    try:
         res = requests.post(
             OLLAMA_URL,
-            json={"model": "qwen3:4b", "prompt": prompt}
-        )
+            json={
+                "model": "qwen3:4b",
+                "prompt": prompt,
+                "stream": False
+            })
 
-        output = res.json()["response"]
+        data = res.json()
+        output = data.get("response","")
 
-        gen.update(
-            output=output,
-            usage_details={
-                "input": count_tokens(prompt),
-                "output": count_tokens(output)
-            },
-            metadata={"agent": "tutor"}
-        )
+    except Exception as e:
+        output = f"OLLAMA ERROR: {str(e)}"
 
     return jsonify({"response": output})
 

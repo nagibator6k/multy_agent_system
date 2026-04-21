@@ -1,36 +1,46 @@
-version: "3.9"
-
 services:
-  ollama:
-    image: ollama/ollama
-    ports:
-      - "11434:11434"
-
   orchestrator:
-    build: ./orchestrator
+    build: .
+    container_name: orchestrator
+    command: python orchestrator/app.py
     ports:
       - "5000:5000"
     env_file:
       - .env
     depends_on:
-      - tutor
-      - assessment
       - ollama
+    environment:
+      - OLLAMA_HOST=http://ollama:11434
 
   tutor:
-    build: ./tutor
+    build: .
+    container_name: tutor
+    command: python tutor/app.py
     ports:
       - "5001:5001"
     env_file:
       - .env
-    depends_on:
-      - ollama
+    environment:
+      - OLLAMA_HOST=http://ollama:11434
 
   assessment:
-    build: ./assessment
+    build: .
+    container_name: assessment
+    command: python assessment/app.py
     ports:
       - "5002:5002"
     env_file:
       - .env
-    depends_on:
-      - ollama
+    environment:
+      - OLLAMA_HOST=http://ollama:11434
+
+  ollama:
+    image: ollama/ollama
+    container_name: ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+
+volumes:
+  ollama_data:

@@ -4,8 +4,8 @@ import numpy as np
 model = SentenceTransformer("all-MiniLM-L6-v2")
 
 docs = [
-    open("rag_data/math.md", "r", encoding="utf-8").read(),
-    open("rag_data/algebra.md", "r", encoding="utf-8").read()
+    open("/app/rag_data/math.md", "r", encoding="utf-8").read(),
+    open("/app/rag_data/algebra.md", "r", encoding="utf-8").read()
 ]
 
 doc_embeddings = model.encode(docs)

@@ -20,28 +20,20 @@ def run():
 {user_input}
 """
 
-    with langfuse.start_as_current_observation(
-        name="assessment",
-        as_type="generation",
-        input=prompt,
-        model="qwen2.5:3b"
-    ) as gen:
-
+    try:
         res = requests.post(
             OLLAMA_URL,
-            json={"model": "qwen3:4b", "prompt": prompt}
-        )
+            json={
+                "model": "qwen3:4b",
+                "prompt": prompt,
+                "stream": False
+            })
 
-        output = res.json()["response"]
+        data = res.json()
+        output = data.get("response","")
 
-        gen.update(
-            output=output,
-            usage_details={
-                "input": count_tokens(prompt),
-                "output": count_tokens(output)
-            },
-            metadata={"agent": "assessment"}
-        )
+    except Exception as e:
+        output = f"OLLAMA ERROR: {str(e)}"
 
     return jsonify({"response": output})
 

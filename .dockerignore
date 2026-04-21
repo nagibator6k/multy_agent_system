@@ -1,0 +1,12 @@
+.venv
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.git
+.idea
+.vscode
+rag_data/*.bin
+rag_data/*.pkl
+Dockerfile*
+docker-compose.override.yml
