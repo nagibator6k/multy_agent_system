@@ -11,27 +11,24 @@ OLLAMA_HOST = os.getenv(
 
 MODEL_NAME = os.getenv(
     "MODEL_NAME",
-    "qwen3:4b",
+    "gemma3:4b",
 )
 
 
 def _clean_response(text: str) -> str:
     """
-    Remove model reasoning from the final response.
+    Remove internal reasoning from the final response.
 
-    Qwen3 may sometimes return internal reasoning even when
-    thinking is disabled. Depending on the Ollama/model version,
-    the reasoning can appear inside <think>...</think> or before
-    a closing </think> tag.
+    Qwen3 can sometimes return its reasoning directly inside
+    message.content without <think>...</think> markers.
 
-    The student should receive only the final answer.
+    In our educational agents the final answer normally starts
+    with one of the known output sections.
     """
 
     text = text.strip()
 
-    # Case 1:
-    # <think>internal reasoning</think>
-    # final answer
+    # Remove explicit thinking blocks.
     if "<think>" in text and "</think>" in text:
         text = re.sub(
             r"<think>.*?</think>",
@@ -40,25 +37,89 @@ def _clean_response(text: str) -> str:
             flags=re.DOTALL | re.IGNORECASE,
         )
 
-    # Case 2:
-    # internal reasoning
-    # </think>
-    # final answer
-    #
-    # This handles models that omit the opening <think> tag.
     if "</think>" in text:
         text = text.split(
             "</think>",
             1,
         )[1]
 
-    # Remove a possible stray opening tag.
+    # Qwen CLI/API can also expose this marker.
+    for marker in (
+        "...done thinking...",
+        "...done thinking.",
+    ):
+        if marker in text:
+            text = text.split(
+                marker,
+                1,
+            )[1]
+
+    # Known final-answer headings for Tutor.
+    tutor_markers = (
+        "### Definition",
+        "### Определение",
+        "### Explanation",
+        "### Объяснение",
+        "### Example",
+        "### Пример",
+    )
+
+    # Known final-answer headings for Assessment.
+    assessment_markers = (
+        "### Result",
+        "### Результат",
+        "### Task",
+        "### Задача",
+        "### Score",
+        "### Оценка",
+    )
+
+    # Find the earliest final-answer marker.
+    positions = []
+
+    for marker in tutor_markers + assessment_markers:
+        position = text.find(marker)
+
+        if position >= 0:
+            positions.append(position)
+
+    if positions:
+        first_position = min(positions)
+
+        # Only cut text when there is actually a substantial
+        # reasoning section before the final answer.
+        if first_position > 0:
+            text = text[first_position:]
+
+    # Handle plain "Задача" output without markdown heading.
+    lines = text.splitlines()
+
+    if lines:
+        for index, line in enumerate(lines):
+            normalized = line.strip().lower()
+
+            if normalized in {
+                "задача",
+                "task",
+            } and index > 0:
+                previous_text = "\n".join(
+                    lines[:index]
+                ).strip()
+
+                # Avoid cutting on an accidental mention of
+                # the word "задача" in normal final text.
+                if len(previous_text) > 100:
+                    text = "\n".join(
+                        lines[index:]
+                    )
+                    break
+
+    # Remove stray thinking tags.
     text = text.replace(
         "<think>",
         "",
     )
 
-    # Remove a possible stray closing tag.
     text = text.replace(
         "</think>",
         "",
@@ -72,12 +133,25 @@ def generate(
     model: str | None = None,
     temperature: float = 0.3,
 ) -> str:
+    """
+    Generate a student-facing response through Ollama.
+
+    Qwen3 is explicitly requested to use non-thinking mode.
+    The response is additionally cleaned before returning it
+    to the agent.
+    """
+
+    user_prompt = (
+        "/no_think\n\n"
+        + prompt
+    )
+
     payload = {
         "model": model or MODEL_NAME,
         "messages": [
             {
                 "role": "user",
-                "content": prompt,
+                "content": user_prompt,
             }
         ],
         "stream": False,
@@ -98,12 +172,10 @@ def generate(
 
     data = response.json()
 
-    message = data.get("message")
-
-    if not message:
-        raise RuntimeError(
-            f"Unexpected Ollama response: {data}"
-        )
+    message = data.get(
+        "message",
+        {},
+    )
 
     content = message.get(
         "content",
