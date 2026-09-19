@@ -1,40 +1,35 @@
 from flask import Flask, request, jsonify
-import requests
-from langfuse_config import langfuse
-from shared.tokens import count_tokens
-
-OLLAMA_URL = "http://ollama:11434/api/generate"
+from assessment.agent import AssessmentAgent
 
 app = Flask(__name__)
+agent = AssessmentAgent()
+
 
 @app.route("/run", methods=["POST"])
 def run():
-    user_input = request.json["input"]
+    data = request.get_json() or {}
 
-    prompt = f"""
-Ты экзаменатор.
+    user_input = data.get("input", "").strip()
+    skill_name = data.get("skill", "generate_task")
 
-Создай задание или проверь ответ.
-
-Запрос:
-{user_input}
-"""
+    if not user_input:
+        return jsonify({"error": "input is required"}), 400
 
     try:
-        res = requests.post(
-            OLLAMA_URL,
-            json={
-                "model": "qwen3:4b",
-                "prompt": prompt,
-                "stream": False
-            })
+        answer = agent.run(
+            user_input=user_input,
+            skill_name=skill_name,
+        )
 
-        data = res.json()
-        output = data.get("response","")
+        return jsonify({
+            "agent": "assessment",
+            "response": answer,
+            "skill": skill_name,
+        })
 
-    except Exception as e:
-        output = f"OLLAMA ERROR: {str(e)}"
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
 
-    return jsonify({"response": output})
 
-app.run(host="0.0.0.0", port=5002)
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=5002)
