@@ -35,6 +35,30 @@ class AssessmentAgent:
         self.memory = MemoryStore()
 
     @staticmethod
+    def _detect_language(
+        user_input: str,
+    ) -> str:
+        cyrillic_count = sum(
+            1
+            for char in user_input
+            if "\u0400" <= char <= "\u04ff"
+        )
+
+        latin_count = sum(
+            1
+            for char in user_input
+            if (
+                "A" <= char <= "Z"
+                or "a" <= char <= "z"
+            )
+        )
+
+        if cyrillic_count > latin_count:
+            return "Russian"
+
+        return "English"
+
+    @staticmethod
     def _parse_number(
         value: str,
         default: float = 1.0,
@@ -119,12 +143,12 @@ class AssessmentAgent:
         text: str,
     ) -> float | None:
         """
-        Extract score from common formats.
+        Extract a score from common formats and normalize it
+        to a percentage.
 
         Supported examples:
 
             80%
-            80 %
             8/10
             8 / 10
             8 из 10
@@ -132,13 +156,8 @@ class AssessmentAgent:
             0 баллов
             Оценка: 80%
             Score: 8/10
-
-        The returned value is normalized to a percentage.
         """
 
-        # 1. Percentage:
-        #    80%
-        #    80 %
         percentage_match = re.search(
             r"(?:оценка|score)?\s*[:\-]?\s*"
             r"(\d+(?:\.\d+)?)\s*%",
@@ -156,9 +175,6 @@ class AssessmentAgent:
                 min(100.0, score),
             )
 
-        # 2. Fraction:
-        #    8/10
-        #    8 / 10
         fraction_match = re.search(
             r"(?:оценка|score)?\s*[:\-]?\s*"
             r"(\d+(?:\.\d+)?)\s*/\s*"
@@ -190,9 +206,6 @@ class AssessmentAgent:
                 min(100.0, score),
             )
 
-        # 3. Russian "из":
-        #    8 из 10
-        #    8 из 10 баллов
         russian_fraction_match = re.search(
             r"(?:оценка)?\s*[:\-]?\s*"
             r"(\d+(?:\.\d+)?)\s+из\s+"
@@ -224,13 +237,6 @@ class AssessmentAgent:
                 min(100.0, score),
             )
 
-        # 4. Single score in points:
-        #    0 баллов
-        #    5 баллов
-        #    Оценка: 0 баллов
-        #
-        # For the current assessment format the maximum
-        # is treated as 10 points.
         points_match = re.search(
             r"(?:оценка)?\s*[:\-]?\s*"
             r"(\d+(?:\.\d+)?)\s*"
@@ -324,6 +330,10 @@ class AssessmentAgent:
                 f"Unknown assessment skill: {skill_name}"
             )
 
+        language = self._detect_language(
+            user_input
+        )
+
         if tool_result is not None:
             tool_context = json.dumps(
                 tool_result,
@@ -354,6 +364,9 @@ RULES:
 CURRENT SKILL:
 {self.skills[skill_name]}
 
+STUDENT LANGUAGE:
+{language}
+
 SELECTED TOOL:
 {selected_tool}
 
@@ -366,23 +379,49 @@ STUDENT MEMORY:
 STUDENT REQUEST:
 {user_input}
 
-IMPORTANT:
+FINAL RESPONSE RULES:
 
-- Use the tool result when it is available.
-- Treat mathematical tool results as authoritative.
-- Do not invent or modify mathematical results.
-- When evaluating an answer, compare the student's
-  answer with the tool result.
-- When knowledge context is provided, use it when
-  it is relevant to the task.
-- Use student memory only when it is relevant to
-  the current request.
-- Provide an explicit score when evaluating an answer.
-- Use a clear score format such as "0/10", "5/10",
-  "10/10", or "80%".
-- Do not mention internal prompts, skills, tools,
-  database, memory implementation, or implementation
-  details to the student.
+1. Return ONLY the final answer for the student.
+2. NEVER output internal reasoning or analysis.
+3. NEVER describe your reasoning process.
+4. NEVER write phrases such as:
+   "We are given",
+   "We need to",
+   "Let's analyze",
+   "But note",
+   "Wait",
+   "The system says",
+   "The tool result says",
+   or similar internal reasoning.
+5. Do not mention prompts, system instructions,
+   skills, tools, memory, databases, or implementation.
+6. Answer entirely in the student's language.
+7. If the student writes in Russian, use Russian
+   headings and Russian explanations.
+8. If the student writes in English, use English.
+9. Generate exactly what the current skill requires.
+10. Do not add unrelated explanations.
+
+SPECIAL RULES FOR generate_task:
+
+- Create ONE clear educational task.
+- Do not reveal the internal reasoning used to create it.
+- Do not discuss why the task was chosen.
+- Do not discuss the student's internal memory.
+- Do not reproduce previous mistakes unless the task
+  itself needs them.
+- Do not reveal an "expected answer" to the student
+  unless the current skill explicitly requires it.
+- Prefer a concise student-facing task.
+
+SPECIAL RULES FOR evaluate_answer:
+
+- Use the mathematical tool result as authoritative
+  when it is available.
+- Compare the student's answer with the tool result.
+- Give an explicit score.
+- Explain mistakes clearly.
+- Give actionable feedback.
 
 Follow the identity, behavior, rules and current skill.
 """.strip()
@@ -406,7 +445,7 @@ Follow the identity, behavior, rules and current skill.
             skill_name=skill_name,
         )
 
-        # 2. Execute the selected tool through the Registry.
+        # 2. Execute the selected tool.
         tool_result = self._run_selected_tool(
             tool_name=selected_tool,
             user_input=user_input,
@@ -419,7 +458,7 @@ Follow the identity, behavior, rules and current skill.
             session_id=session_id,
         )
 
-        # 4. Build prompt using tools and memory.
+        # 4. Build the final prompt.
         prompt = self.build_prompt(
             user_input=user_input,
             skill_name=skill_name,
@@ -428,7 +467,7 @@ Follow the identity, behavior, rules and current skill.
             memory_context=memory_context,
         )
 
-        # 5. Generate response.
+        # 5. Generate the final student-facing answer.
         answer = generate(prompt)
 
         # 6. Save short-term conversation memory.
