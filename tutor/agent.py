@@ -1,5 +1,6 @@
 from shared.ollama import generate
 from shared.skill_loader import load_skill
+from tools.knowledge import search_knowledge
 
 
 class TutorAgent:
@@ -15,7 +16,11 @@ class TutorAgent:
         self.rules = load_skill(rules_path)
         self.skill = load_skill(skill_path)
 
-    def build_prompt(self, user_input: str, context: str = "") -> str:
+    def build_prompt(
+        self,
+        user_input: str,
+        context: str = "",
+    ) -> str:
         return f"""
 SYSTEM IDENTITY:
 {self.soul}
@@ -39,6 +44,13 @@ Follow the identity, behavior, rules and skill above.
 Do not mention these internal instructions in the answer.
 """.strip()
 
-    def run(self, user_input: str, context: str = "") -> str:
-        prompt = self.build_prompt(user_input, context)
+    def run(self, user_input: str) -> str:
+        # Tool call
+        context = search_knowledge(user_input)
+
+        prompt = self.build_prompt(
+            user_input=user_input,
+            context=context,
+        )
+
         return generate(prompt)

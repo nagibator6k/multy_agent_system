@@ -1,6 +1,6 @@
 from flask import Flask, request, jsonify
 from tutor.agent import TutorAgent
-from rag.rag import search
+
 
 app = Flask(__name__)
 agent = TutorAgent()
@@ -13,14 +13,11 @@ def run():
     user_input = data.get("input", "").strip()
 
     if not user_input:
-        return jsonify({"error": "input is required"}), 400
+        return jsonify({
+            "error": "input is required"
+        }), 400
 
-    context = search(user_input)
-
-    answer = agent.run(
-        user_input=user_input,
-        context=context,
-    )
+    answer = agent.run(user_input)
 
     return jsonify({
         "agent": "tutor",
@@ -29,4 +26,7 @@ def run():
 
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5001)
+    app.run(
+        host="0.0.0.0",
+        port=5001,
+    )
