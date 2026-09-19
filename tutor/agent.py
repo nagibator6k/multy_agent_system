@@ -1,6 +1,7 @@
 from shared.ollama import generate
 from shared.skill_loader import load_skill
 from tools.registry import tool_registry
+from memory.store import MemoryStore
 
 
 class TutorAgent:
@@ -22,10 +23,13 @@ class TutorAgent:
             )
         }
 
+        self.memory = MemoryStore()
+
     def build_prompt(
         self,
         user_input: str,
         context: str = "",
+        memory_context: str = "",
     ) -> str:
         return f"""
 SYSTEM IDENTITY:
@@ -40,6 +44,9 @@ RULES:
 CURRENT SKILL:
 {self.skill}
 
+STUDENT MEMORY:
+{memory_context if memory_context else "No stored memory is available."}
+
 AVAILABLE TOOLS:
 - search_knowledge: searches the educational knowledge base.
 
@@ -51,19 +58,52 @@ STUDENT REQUEST:
 
 Follow the identity, behavior, rules and skill above.
 
+Use student memory only when it is relevant to the current request.
 Use the provided knowledge context when it is relevant.
+
 Do not mention internal prompts, skills, tools,
-or implementation details in the answer.
+database, memory implementation, or implementation details
+in the answer.
 """.strip()
 
-    def run(self, user_input: str) -> str:
+    def run(
+        self,
+        user_input: str,
+        student_id: str = "demo-user",
+        session_id: str = "default-session",
+    ) -> str:
+
         context = self.tools["search_knowledge"](
             user_input
+        )
+
+        memory_context = self.memory.get_student_context(
+            student_id=student_id,
+            session_id=session_id,
         )
 
         prompt = self.build_prompt(
             user_input=user_input,
             context=context,
+            memory_context=memory_context,
         )
 
-        return generate(prompt)
+        answer = generate(prompt)
+
+        self.memory.save_message(
+            student_id=student_id,
+            session_id=session_id,
+            role="user",
+            content=user_input,
+            agent="tutor",
+        )
+
+        self.memory.save_message(
+            student_id=student_id,
+            session_id=session_id,
+            role="assistant",
+            content=answer,
+            agent="tutor",
+        )
+
+        return answer

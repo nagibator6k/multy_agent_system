@@ -5,6 +5,7 @@ from shared.ollama import generate
 from shared.skill_loader import load_skill
 from tools.registry import tool_registry
 from tools.selector import ToolSelector
+from memory.store import MemoryStore
 
 
 class AssessmentAgent:
@@ -31,6 +32,7 @@ class AssessmentAgent:
         }
 
         self.tool_selector = ToolSelector()
+        self.memory = MemoryStore()
 
     @staticmethod
     def _parse_number(
@@ -112,6 +114,54 @@ class AssessmentAgent:
         except ValueError:
             return None
 
+    @staticmethod
+    def _extract_score(
+        text: str,
+    ) -> float | None:
+        """
+        Extract score from common formats:
+
+            80%
+            8/10
+            0/2
+            50 %
+        """
+
+        percentage_match = re.search(
+            r"(\d+(?:\.\d+)?)\s*%",
+            text,
+        )
+
+        if percentage_match:
+            return float(
+                percentage_match.group(1)
+            )
+
+        fraction_match = re.search(
+            r"(\d+(?:\.\d+)?)\s*/\s*(\d+(?:\.\d+)?)",
+            text,
+        )
+
+        if fraction_match:
+            numerator = float(
+                fraction_match.group(1)
+            )
+
+            denominator = float(
+                fraction_match.group(2)
+            )
+
+            if denominator == 0:
+                return None
+
+            return (
+                numerator
+                / denominator
+                * 100
+            )
+
+        return None
+
     def _run_selected_tool(
         self,
         tool_name: str | None,
@@ -171,6 +221,7 @@ class AssessmentAgent:
         skill_name: str = "generate_task",
         tool_name: str | None = None,
         tool_result: dict | None = None,
+        memory_context: str = "",
     ) -> str:
 
         if skill_name not in self.skills:
@@ -214,6 +265,9 @@ SELECTED TOOL:
 TOOL RESULT:
 {tool_context}
 
+STUDENT MEMORY:
+{memory_context}
+
 STUDENT REQUEST:
 {user_input}
 
@@ -226,8 +280,11 @@ IMPORTANT:
   answer with the tool result.
 - When knowledge context is provided, use it when
   it is relevant to the task.
+- Use student memory only when it is relevant to
+  the current request.
 - Do not mention internal prompts, skills, tools,
-  or implementation details to the student.
+  database, memory implementation, or implementation
+  details to the student.
 
 Follow the identity, behavior, rules and current skill.
 """.strip()
@@ -236,6 +293,8 @@ Follow the identity, behavior, rules and current skill.
         self,
         user_input: str,
         skill_name: str = "generate_task",
+        student_id: str = "demo-user",
+        session_id: str = "default-session",
     ) -> str:
 
         if skill_name not in self.skills:
@@ -256,12 +315,75 @@ Follow the identity, behavior, rules and current skill.
             skill_name=skill_name,
         )
 
-        # 3. Give the result to the LLM.
+        # 3. Retrieve student memory.
+        memory_context = self.memory.get_student_context(
+            student_id=student_id,
+            session_id=session_id,
+        )
+
+        # 4. Build prompt using tools and memory.
         prompt = self.build_prompt(
             user_input=user_input,
             skill_name=skill_name,
             tool_name=selected_tool,
             tool_result=tool_result,
+            memory_context=memory_context,
         )
 
-        return generate(prompt)
+        # 5. Generate response.
+        answer = generate(prompt)
+
+        # 6. Save short-term conversation memory.
+        self.memory.save_message(
+            student_id=student_id,
+            session_id=session_id,
+            role="user",
+            content=user_input,
+            agent="assessment",
+        )
+
+        self.memory.save_message(
+            student_id=student_id,
+            session_id=session_id,
+            role="assistant",
+            content=answer,
+            agent="assessment",
+        )
+
+        # 7. Save long-term assessment memory.
+        score = self._extract_score(answer)
+
+        self.memory.save_assessment(
+            student_id=student_id,
+            session_id=session_id,
+            skill=skill_name,
+            request=user_input,
+            response=answer,
+            score=score,
+        )
+
+        # 8. Save learning progress and mistakes.
+        if score is not None:
+            topic = (
+                "quadratic_equation"
+                if selected_tool == "solve_quadratic"
+                else skill_name
+            )
+
+            self.memory.save_progress(
+                student_id=student_id,
+                topic=topic,
+                mastery_score=score,
+            )
+
+            if score < 100:
+                self.memory.save_mistake(
+                    student_id=student_id,
+                    topic=topic,
+                    description=(
+                        f"Assessment score: {score:.1f}%. "
+                        f"Request: {user_input}"
+                    ),
+                )
+
+        return answer
