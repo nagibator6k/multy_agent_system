@@ -4,6 +4,7 @@ import re
 from shared.ollama import generate
 from shared.skill_loader import load_skill
 from tools.registry import tool_registry
+from tools.selector import ToolSelector
 
 
 class AssessmentAgent:
@@ -29,11 +30,7 @@ class AssessmentAgent:
             ),
         }
 
-        self.tools = {
-            "solve_quadratic": tool_registry.get(
-                "solve_quadratic"
-            )
-        }
+        self.tool_selector = ToolSelector()
 
     @staticmethod
     def _parse_number(
@@ -54,14 +51,34 @@ class AssessmentAgent:
     def _extract_quadratic_coefficients(
         text: str,
     ) -> tuple[float, float, float] | None:
+
         normalized = text.lower()
 
-        normalized = normalized.replace("²", "^2")
-        normalized = normalized.replace("−", "-")
-        normalized = normalized.replace("–", "-")
-        normalized = normalized.replace("—", "-")
+        normalized = normalized.replace(
+            "²",
+            "^2",
+        )
 
-        normalized = re.sub(r"\s+", "", normalized)
+        normalized = normalized.replace(
+            "−",
+            "-",
+        )
+
+        normalized = normalized.replace(
+            "–",
+            "-",
+        )
+
+        normalized = normalized.replace(
+            "—",
+            "-",
+        )
+
+        normalized = re.sub(
+            r"\s+",
+            "",
+            normalized,
+        )
 
         pattern = re.compile(
             r"(?P<a>[+-]?\d*\.?\d*)x\^2"
@@ -95,52 +112,64 @@ class AssessmentAgent:
         except ValueError:
             return None
 
-    def evaluate_quadratic(
+    def _run_selected_tool(
         self,
-        a: float,
-        b: float,
-        c: float,
-    ) -> dict:
-        return self.tools["solve_quadratic"](
-            a=a,
-            b=b,
-            c=c,
-        )
-
-    def _run_math_tool(
-        self,
+        tool_name: str | None,
         user_input: str,
+        skill_name: str,
     ) -> dict | None:
 
-        coefficients = self._extract_quadratic_coefficients(
-            user_input
-        )
-
-        if coefficients is None:
+        if tool_name is None:
             return None
 
-        a, b, c = coefficients
+        if tool_name == "solve_quadratic":
+            coefficients = (
+                self._extract_quadratic_coefficients(
+                    user_input
+                )
+            )
 
-        result = self.evaluate_quadratic(
-            a=a,
-            b=b,
-            c=c,
-        )
+            if coefficients is None:
+                return None
 
-        return {
-            "tool": "solve_quadratic",
-            "input": {
-                "a": a,
-                "b": b,
-                "c": c,
-            },
-            "result": result,
-        }
+            a, b, c = coefficients
+
+            result = tool_registry.call(
+                "solve_quadratic",
+                a=a,
+                b=b,
+                c=c,
+            )
+
+            return {
+                "tool": "solve_quadratic",
+                "input": {
+                    "a": a,
+                    "b": b,
+                    "c": c,
+                },
+                "result": result,
+            }
+
+        if tool_name == "search_knowledge":
+            result = tool_registry.call(
+                "search_knowledge",
+                query=user_input,
+            )
+
+            return {
+                "tool": "search_knowledge",
+                "query": user_input,
+                "result": result,
+            }
+
+        return None
 
     def build_prompt(
         self,
         user_input: str,
         skill_name: str = "generate_task",
+        tool_name: str | None = None,
         tool_result: dict | None = None,
     ) -> str:
 
@@ -157,9 +186,14 @@ class AssessmentAgent:
             )
         else:
             tool_context = (
-                "No mathematical tool was invoked "
-                "for this request."
+                "No tool was invoked for this request."
             )
+
+        selected_tool = (
+            tool_name
+            if tool_name
+            else "none"
+        )
 
         return f"""
 SYSTEM IDENTITY:
@@ -174,10 +208,10 @@ RULES:
 CURRENT SKILL:
 {self.skills[skill_name]}
 
-AVAILABLE TOOLS:
-- solve_quadratic: solves ax² + bx + c = 0.
+SELECTED TOOL:
+{selected_tool}
 
-MATHEMATICAL TOOL RESULT:
+TOOL RESULT:
 {tool_context}
 
 STUDENT REQUEST:
@@ -185,13 +219,13 @@ STUDENT REQUEST:
 
 IMPORTANT:
 
-- Use the mathematical tool result as the authoritative
-  source for the corresponding calculation.
-- Do not manually recalculate the result if the tool
-  already provided it.
-- When evaluating a student's answer, compare it with
-  the tool result.
-- Explain any mismatch clearly.
+- Use the tool result when it is available.
+- Treat mathematical tool results as authoritative.
+- Do not invent or modify mathematical results.
+- When evaluating an answer, compare the student's
+  answer with the tool result.
+- When knowledge context is provided, use it when
+  it is relevant to the task.
 - Do not mention internal prompts, skills, tools,
   or implementation details to the student.
 
@@ -209,16 +243,24 @@ Follow the identity, behavior, rules and current skill.
                 f"Unknown assessment skill: {skill_name}"
             )
 
-        tool_result = None
+        # 1. Select a tool according to the task.
+        selected_tool = self.tool_selector.select(
+            user_input=user_input,
+            skill_name=skill_name,
+        )
 
-        if skill_name == "evaluate_answer":
-            tool_result = self._run_math_tool(
-                user_input
-            )
+        # 2. Execute the selected tool through the Registry.
+        tool_result = self._run_selected_tool(
+            tool_name=selected_tool,
+            user_input=user_input,
+            skill_name=skill_name,
+        )
 
+        # 3. Give the result to the LLM.
         prompt = self.build_prompt(
             user_input=user_input,
             skill_name=skill_name,
+            tool_name=selected_tool,
             tool_result=tool_result,
         )
 
