@@ -1,10 +1,7 @@
 import json
+import subprocess
 import time
 
-import requests
-
-
-OLLAMA_URL = "http://127.0.0.1:11434/api/chat"
 
 MODELS = [
     "qwen3:4b",
@@ -19,7 +16,8 @@ TESTS = [
         "prompt": (
             "Объясни простыми словами, что такое производная. "
             "Ответь на русском языке. "
-            "Дай короткое объяснение и один простой пример."
+            "Дай короткое объяснение и один простой пример. "
+            "Не показывай внутреннее рассуждение."
         ),
     },
     {
@@ -27,7 +25,8 @@ TESTS = [
         "prompt": (
             "Создай одну учебную задачу по квадратным уравнениям. "
             "Ответь на русском языке. "
-            "Укажи условие задачи и её сложность."
+            "Укажи условие задачи и сложность. "
+            "Не показывай внутреннее рассуждение."
         ),
     },
     {
@@ -39,7 +38,8 @@ TESTS = [
             "Правильные корни: x = 2 и x = 8.\n"
             "Скажи, правильный ли ответ студента, "
             "и кратко объясни ошибку.\n"
-            "Ответь на русском языке."
+            "Ответь на русском языке. "
+            "Не показывай внутреннее рассуждение."
         ),
     },
 ]
@@ -47,103 +47,106 @@ TESTS = [
 
 def clean_response(text: str) -> str:
     """
-    Remove thinking markup if the model returned it
-    as part of the visible content.
+    Extract the final answer from Ollama CLI output.
+
+    Qwen3 may print a visible thinking block in CLI mode:
+
+        Thinking...
+        ...
+        ...done thinking.
+
+        FINAL ANSWER
+
+    In that case we keep only the text after
+    "...done thinking.".
     """
 
     text = text.strip()
 
-    if "<think>" in text and "</think>" in text:
+    thinking_markers = [
+        "...done thinking...",
+        "...done thinking.",
+    ]
+
+    for marker in thinking_markers:
+        if marker in text:
+            text = text.split(
+                marker,
+                1,
+            )[1]
+
+    if "</think>" in text:
         text = text.split(
             "</think>",
             1,
         )[1]
 
-    elif "</think>" in text:
-        text = text.split(
+    if "<think>" in text:
+        text = text.replace(
+            "<think>",
+            "",
+        )
+
+    if "</think>" in text:
+        text = text.replace(
             "</think>",
-            1,
-        )[1]
-
-    text = text.replace(
-        "<think>",
-        "",
-    )
-
-    text = text.replace(
-        "</think>",
-        "",
-    )
+            "",
+        )
 
     return text.strip()
 
 
-def call_model(
+def run_model(
     model: str,
     prompt: str,
-) -> tuple[str, str, float]:
-    payload = {
-        "model": model,
-        "messages": [
-            {
-                "role": "user",
-                "content": prompt,
-            }
-        ],
-        "stream": False,
-        "think": False,
-        "options": {
-            "temperature": 0.2,
-            "num_predict": 512,
-        },
-    }
+) -> tuple[str, float]:
+    command = [
+        "docker",
+        "exec",
+        "ollama",
+        "ollama",
+        "run",
+        model,
+        prompt,
+    ]
 
     start = time.perf_counter()
 
-    response = requests.post(
-        OLLAMA_URL,
-        json=payload,
+    process = subprocess.run(
+        command,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
         timeout=300,
     )
 
     latency = time.perf_counter() - start
 
-    response.raise_for_status()
-
-    data = response.json()
-
-    message = data.get(
-        "message",
-        {},
-    )
-
-    content = clean_response(
-        message.get(
-            "content",
-            "",
+    if process.returncode != 0:
+        error = (
+            process.stderr.strip()
+            or process.stdout.strip()
+            or f"Exit code: {process.returncode}"
         )
-    )
 
-    thinking = message.get(
-        "thinking",
-        "",
-    )
+        raise RuntimeError(error)
 
-    if not content:
+    output = process.stdout.strip()
+
+    if not output:
         raise RuntimeError(
-            f"Model {model} returned an empty final answer: "
-            f"{data}"
+            "Ollama returned an empty response."
         )
 
     return (
-        content,
-        thinking,
+        clean_response(output),
         latency,
     )
 
 
 def run_benchmark() -> dict:
-    all_results = []
+    results = []
 
     for model in MODELS:
         print()
@@ -158,7 +161,7 @@ def run_benchmark() -> dict:
             print(f"TEST: {test['name']}")
 
             try:
-                answer, thinking, latency = call_model(
+                answer, latency = run_model(
                     model=model,
                     prompt=test["prompt"],
                 )
@@ -170,8 +173,9 @@ def run_benchmark() -> dict:
                         latency,
                         2,
                     ),
-                    "response_length": len(answer),
-                    "thinking_length": len(thinking),
+                    "response_length": len(
+                        answer
+                    ),
                     "answer": answer,
                 }
 
@@ -185,12 +189,6 @@ def run_benchmark() -> dict:
                     f"{result['response_length']} chars"
                 )
 
-                if thinking:
-                    print(
-                        f"Thinking length: "
-                        f"{result['thinking_length']} chars"
-                    )
-
                 print()
                 print("FINAL ANSWER:")
                 print(answer)
@@ -201,7 +199,6 @@ def run_benchmark() -> dict:
                     "test": test["name"],
                     "latency_sec": None,
                     "response_length": 0,
-                    "thinking_length": 0,
                     "answer": "",
                     "error": str(exc),
                 }
@@ -211,25 +208,27 @@ def run_benchmark() -> dict:
                 )
 
             model_results.append(result)
-            all_results.append(result)
+            results.append(result)
 
-        valid_latencies = [
+        latencies = [
             item["latency_sec"]
             for item in model_results
             if item["latency_sec"] is not None
         ]
 
-        if valid_latencies:
+        if latencies:
             average_latency = (
-                sum(valid_latencies)
-                / len(valid_latencies)
+                sum(latencies)
+                / len(latencies)
             )
 
+            print()
             print(
                 f"Average latency: "
                 f"{average_latency:.2f} sec"
             )
         else:
+            print()
             print(
                 "Average latency: N/A"
             )
@@ -240,7 +239,7 @@ def run_benchmark() -> dict:
             test["name"]
             for test in TESTS
         ],
-        "results": all_results,
+        "results": results,
     }
 
 
