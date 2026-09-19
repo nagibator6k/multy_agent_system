@@ -219,20 +219,20 @@ def run_benchmark() -> dict:
             if item["latency_sec"] is not None
         ]
 
-        average_latency = (
-            sum(valid_latencies)
-            / len(valid_latencies)
-            if valid_latencies
-            else None
-        )
+        if valid_latencies:
+            average_latency = (
+                sum(valid_latencies)
+                / len(valid_latencies)
+            )
 
-        print()
-        print(
-            f"Average latency: "
-            f"{round(average_latency, 2) "
-            f"if average_latency is not None "
-            f"else 'N/A'}"
-        )
+            print(
+                f"Average latency: "
+                f"{average_latency:.2f} sec"
+            )
+        else:
+            print(
+                "Average latency: N/A"
+            )
 
     return {
         "models": MODELS,
