@@ -119,27 +119,52 @@ class AssessmentAgent:
         text: str,
     ) -> float | None:
         """
-        Extract score from common formats:
+        Extract score from common formats.
+
+        Supported examples:
 
             80%
+            80 %
             8/10
-            0/2
-            50 %
+            8 / 10
+            8 из 10
+            8 из 10 баллов
+            0 баллов
+            Оценка: 80%
+            Score: 8/10
+
+        The returned value is normalized to a percentage.
         """
 
+        # 1. Percentage:
+        #    80%
+        #    80 %
         percentage_match = re.search(
+            r"(?:оценка|score)?\s*[:\-]?\s*"
             r"(\d+(?:\.\d+)?)\s*%",
             text,
+            re.IGNORECASE,
         )
 
         if percentage_match:
-            return float(
+            score = float(
                 percentage_match.group(1)
             )
 
+            return max(
+                0.0,
+                min(100.0, score),
+            )
+
+        # 2. Fraction:
+        #    8/10
+        #    8 / 10
         fraction_match = re.search(
-            r"(\d+(?:\.\d+)?)\s*/\s*(\d+(?:\.\d+)?)",
+            r"(?:оценка|score)?\s*[:\-]?\s*"
+            r"(\d+(?:\.\d+)?)\s*/\s*"
+            r"(\d+(?:\.\d+)?)",
             text,
+            re.IGNORECASE,
         )
 
         if fraction_match:
@@ -154,10 +179,80 @@ class AssessmentAgent:
             if denominator == 0:
                 return None
 
-            return (
+            score = (
                 numerator
                 / denominator
                 * 100
+            )
+
+            return max(
+                0.0,
+                min(100.0, score),
+            )
+
+        # 3. Russian "из":
+        #    8 из 10
+        #    8 из 10 баллов
+        russian_fraction_match = re.search(
+            r"(?:оценка)?\s*[:\-]?\s*"
+            r"(\d+(?:\.\d+)?)\s+из\s+"
+            r"(\d+(?:\.\d+)?)",
+            text,
+            re.IGNORECASE,
+        )
+
+        if russian_fraction_match:
+            numerator = float(
+                russian_fraction_match.group(1)
+            )
+
+            denominator = float(
+                russian_fraction_match.group(2)
+            )
+
+            if denominator == 0:
+                return None
+
+            score = (
+                numerator
+                / denominator
+                * 100
+            )
+
+            return max(
+                0.0,
+                min(100.0, score),
+            )
+
+        # 4. Single score in points:
+        #    0 баллов
+        #    5 баллов
+        #    Оценка: 0 баллов
+        #
+        # For the current assessment format the maximum
+        # is treated as 10 points.
+        points_match = re.search(
+            r"(?:оценка)?\s*[:\-]?\s*"
+            r"(\d+(?:\.\d+)?)\s*"
+            r"(?:балл(?:а|ов)?|points?)",
+            text,
+            re.IGNORECASE,
+        )
+
+        if points_match:
+            points = float(
+                points_match.group(1)
+            )
+
+            score = (
+                points
+                / 10.0
+                * 100
+            )
+
+            return max(
+                0.0,
+                min(100.0, score),
             )
 
         return None
@@ -266,7 +361,7 @@ TOOL RESULT:
 {tool_context}
 
 STUDENT MEMORY:
-{memory_context}
+{memory_context if memory_context else "No stored memory is available."}
 
 STUDENT REQUEST:
 {user_input}
@@ -282,6 +377,9 @@ IMPORTANT:
   it is relevant to the task.
 - Use student memory only when it is relevant to
   the current request.
+- Provide an explicit score when evaluating an answer.
+- Use a clear score format such as "0/10", "5/10",
+  "10/10", or "80%".
 - Do not mention internal prompts, skills, tools,
   database, memory implementation, or implementation
   details to the student.
@@ -350,7 +448,7 @@ Follow the identity, behavior, rules and current skill.
             agent="assessment",
         )
 
-        # 7. Save long-term assessment memory.
+        # 7. Extract and save assessment score.
         score = self._extract_score(answer)
 
         self.memory.save_assessment(
@@ -370,18 +468,24 @@ Follow the identity, behavior, rules and current skill.
                 else skill_name
             )
 
+            normalized_score = max(
+                0.0,
+                min(100.0, score),
+            )
+
             self.memory.save_progress(
                 student_id=student_id,
                 topic=topic,
-                mastery_score=score,
+                mastery_score=normalized_score,
             )
 
-            if score < 100:
+            if normalized_score < 100.0:
                 self.memory.save_mistake(
                     student_id=student_id,
                     topic=topic,
                     description=(
-                        f"Assessment score: {score:.1f}%. "
+                        f"Assessment score: "
+                        f"{normalized_score:.1f}%. "
                         f"Request: {user_input}"
                     ),
                 )
