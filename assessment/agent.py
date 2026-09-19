@@ -3,7 +3,7 @@ import re
 
 from shared.ollama import generate
 from shared.skill_loader import load_skill
-from tools.math_tools import solve_quadratic
+from tools.registry import tool_registry
 
 
 class AssessmentAgent:
@@ -29,18 +29,17 @@ class AssessmentAgent:
             ),
         }
 
-    @staticmethod
-    def _parse_number(value: str, default: float = 1.0) -> float:
-        """
-        Convert a coefficient string into a number.
+        self.tools = {
+            "solve_quadratic": tool_registry.get(
+                "solve_quadratic"
+            )
+        }
 
-        Examples:
-            "3"   -> 3
-            "-3"  -> -3
-            "+"   -> 1
-            "-"   -> -1
-            ""    -> default
-        """
+    @staticmethod
+    def _parse_number(
+        value: str,
+        default: float = 1.0,
+    ) -> float:
         value = value.strip()
 
         if value in ("", "+"):
@@ -55,28 +54,13 @@ class AssessmentAgent:
     def _extract_quadratic_coefficients(
         text: str,
     ) -> tuple[float, float, float] | None:
-        """
-        Extract coefficients from an equation of the form:
-
-            ax² + bx + c = 0
-
-        Supported examples:
-
-            x² - 10x + 16 = 0
-            x^2 - 10x + 16 = 0
-            3x² - 10x + 7 = 0
-            2x^2 + 5x - 3 = 0
-        """
-
         normalized = text.lower()
 
-        # Normalize common mathematical symbols.
         normalized = normalized.replace("²", "^2")
         normalized = normalized.replace("−", "-")
         normalized = normalized.replace("–", "-")
         normalized = normalized.replace("—", "-")
 
-        # Remove spaces to simplify parsing.
         normalized = re.sub(r"\s+", "", normalized)
 
         pattern = re.compile(
@@ -117,23 +101,16 @@ class AssessmentAgent:
         b: float,
         c: float,
     ) -> dict:
-        """
-        Call the mathematical tool.
-
-        Solves:
-            ax² + bx + c = 0
-        """
-
-        return solve_quadratic(a, b, c)
+        return self.tools["solve_quadratic"](
+            a=a,
+            b=b,
+            c=c,
+        )
 
     def _run_math_tool(
         self,
         user_input: str,
     ) -> dict | None:
-        """
-        Detect a quadratic equation in the user request
-        and call the mathematical tool.
-        """
 
         coefficients = self._extract_quadratic_coefficients(
             user_input
@@ -144,7 +121,11 @@ class AssessmentAgent:
 
         a, b, c = coefficients
 
-        result = self.evaluate_quadratic(a, b, c)
+        result = self.evaluate_quadratic(
+            a=a,
+            b=b,
+            c=c,
+        )
 
         return {
             "tool": "solve_quadratic",
@@ -176,7 +157,8 @@ class AssessmentAgent:
             )
         else:
             tool_context = (
-                "No mathematical tool was invoked for this request."
+                "No mathematical tool was invoked "
+                "for this request."
             )
 
         return f"""
@@ -192,6 +174,9 @@ RULES:
 CURRENT SKILL:
 {self.skills[skill_name]}
 
+AVAILABLE TOOLS:
+- solve_quadratic: solves ax² + bx + c = 0.
+
 MATHEMATICAL TOOL RESULT:
 {tool_context}
 
@@ -202,8 +187,8 @@ IMPORTANT:
 
 - Use the mathematical tool result as the authoritative
   source for the corresponding calculation.
-- Do not recalculate the quadratic equation manually
-  if the tool already provided the result.
+- Do not manually recalculate the result if the tool
+  already provided it.
 - When evaluating a student's answer, compare it with
   the tool result.
 - Explain any mismatch clearly.
@@ -226,10 +211,10 @@ Follow the identity, behavior, rules and current skill.
 
         tool_result = None
 
-        # The mathematical tool is automatically invoked
-        # when evaluating a request containing a quadratic equation.
         if skill_name == "evaluate_answer":
-            tool_result = self._run_math_tool(user_input)
+            tool_result = self._run_math_tool(
+                user_input
+            )
 
         prompt = self.build_prompt(
             user_input=user_input,

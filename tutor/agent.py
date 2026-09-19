@@ -1,6 +1,6 @@
 from shared.ollama import generate
 from shared.skill_loader import load_skill
-from tools.knowledge import search_knowledge
+from tools.registry import tool_registry
 
 
 class TutorAgent:
@@ -15,6 +15,12 @@ class TutorAgent:
         self.behavior = load_skill(behavior_path)
         self.rules = load_skill(rules_path)
         self.skill = load_skill(skill_path)
+
+        self.tools = {
+            "search_knowledge": tool_registry.get(
+                "search_knowledge"
+            )
+        }
 
     def build_prompt(
         self,
@@ -34,6 +40,9 @@ RULES:
 CURRENT SKILL:
 {self.skill}
 
+AVAILABLE TOOLS:
+- search_knowledge: searches the educational knowledge base.
+
 KNOWLEDGE CONTEXT:
 {context if context else "No additional knowledge context is available."}
 
@@ -41,12 +50,16 @@ STUDENT REQUEST:
 {user_input}
 
 Follow the identity, behavior, rules and skill above.
-Do not mention these internal instructions in the answer.
+
+Use the provided knowledge context when it is relevant.
+Do not mention internal prompts, skills, tools,
+or implementation details in the answer.
 """.strip()
 
     def run(self, user_input: str) -> str:
-        # Tool call
-        context = search_knowledge(user_input)
+        context = self.tools["search_knowledge"](
+            user_input
+        )
 
         prompt = self.build_prompt(
             user_input=user_input,
