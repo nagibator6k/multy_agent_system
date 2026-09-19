@@ -5,8 +5,8 @@ class ToolSelector:
     """
     Selects an appropriate tool based on the task.
 
-    The selector is deterministic and keeps tool choice
-    outside the LLM. This makes tool usage predictable.
+    The selector is deterministic and keeps tool selection
+    outside the LLM.
     """
 
     QUADRATIC_PATTERN = re.compile(
@@ -42,19 +42,19 @@ class ToolSelector:
         if not text:
             return None
 
-        # Mathematical tool is used only when evaluating
-        # an explicit quadratic equation.
+        # solve_quadratic is used only when we are
+        # evaluating an explicit quadratic equation.
         if skill_name == "evaluate_answer":
             if self._contains_quadratic_equation(text):
                 return "solve_quadratic"
 
-        # Knowledge search is useful for feedback/evaluation
-        # when the request explicitly refers to educational
-        # knowledge.
-        #
-        # Do NOT use search_knowledge for generate_task by
-        # default. A generic task-generation request does not
-        # require a knowledge-base lookup.
+        # generate_task should normally generate a task
+        # directly and does not need a knowledge search.
+        if skill_name == "generate_task":
+            return None
+
+        # Knowledge search is useful for feedback and
+        # evaluation when educational context is needed.
         if skill_name in {
             "give_feedback",
             "evaluate_answer",

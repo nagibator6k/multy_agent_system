@@ -1,0 +1,127 @@
+{
+  "models": [
+    "qwen3:4b",
+    "gemma3:4b",
+    "llama3.2:3b"
+  ],
+  "tests": [
+    "explain_derivative",
+    "generate_quadratic_task",
+    "evaluate_quadratic_answer"
+  ],
+  "results": [
+    {
+      "model": "qwen3:4b",
+      "tests": [
+        {
+          "model": "qwen3:4b",
+          "test": "explain_derivative",
+          "latency_sec": 19.36,
+          "response_length": 910,
+          "quality_score": 100.0,
+          "answer": "Хорошо, мне нужно объяснить, что такое производная простыми словами на русском языке. Начну с того, что вспомню основные понятия. Производная в математике, наверное, связана с изменением функции. То есть, как быстро функция меняется в определенной точке.\n\nНадо подумать, как это объяснить без сложных терминов. Может, использовать пример с движением. Например, если у нас есть функция, которая показывает расстояние от точки в зависимости от времени, то производная по времени будет скоростью. То есть, производная показывает скорость изменения функции в конкретной точке.\n\nНужно проверить, правильно ли я это понимаю. В учебниках часто говорят, что производная — это мгновенная скорость изменения функции. То есть, если функция — это, например, высота дерева с течением времени, то производная в момент времени t будет показывать, насколько быстро растет дерево в этот момент.\n\nПример: пусть функция s(t) = t²"
+        },
+        {
+          "model": "qwen3:4b",
+          "test": "generate_quadratic_task",
+          "latency_sec": 10.32,
+          "response_length": 716,
+          "quality_score": 50.0,
+          "answer": "Хорошо, мне нужно создать одну учебную задачу по квадратным урав. Ответить на русском, без внутреннего рассуждения. Только условие и сложность.\n\nСначала подумаю, что такое квадратное уравнение. Обычно вида ax² + bx + c = 0. Нужно придумать задачу, которая подходит для учащихся, возможно, среднего уровня.\n\nМожет быть, задача про движение или геометрию. Например, площадь прямоугольника или что-то подобное. Или задача с прикладным смыслом.\n\nПопробую придумать задачу про два числа. Например: \"Найдите два числа, сумма которых равна 10, а произведение 21.\" Но это квадратное уравнение, но может быть слишком простое.\n\nИли задача с приложением: \"Скорость катера в стоячей воде 15 км/ч. Скорость течения реки 3 км/ч. Н"
+        },
+        {
+          "model": "qwen3:4b",
+          "test": "evaluate_quadratic_answer",
+          "latency_sec": 10.36,
+          "response_length": 561,
+          "quality_score": 50.0,
+          "answer": "Хорошо, давай проверю ответ студента. У нас есть квадратное уравнение x² - 10x + 16 = 0. Студент сказал, что корни x = 3 и x = 5. Но правильные корни, по задаче, x = 2 и x = 8. Нужно определить, правильный ли ответ и объяснить ошибку.\n\nСначала проверю, как студент мог решить уравнение. Возможно, он использовал формулу дискриминанта или разложение на множители. Давай посчитаю правильные корни. Для квадратного урав: x² - 10x +16 =0. Дискриминант D = b² -4ac = (-10)^2 -4*1*16 = 100 -64 =36. Корни: [10 ± √36]/2 = [10 ±6]/2. То есть (10+6)/2=16/2=8 и (10-6)/2="
+        }
+      ]
+    },
+    {
+      "model": "gemma3:4b",
+      "tests": [
+        {
+          "model": "gemma3:4b",
+          "test": "explain_derivative",
+          "latency_sec": null,
+          "response_length": 0,
+          "quality_score": 0.0,
+          "answer": "",
+          "error": "404 Client Error: Not Found for url: http://127.0.0.1:11434/api/chat"
+        },
+        {
+          "model": "gemma3:4b",
+          "test": "generate_quadratic_task",
+          "latency_sec": null,
+          "response_length": 0,
+          "quality_score": 0.0,
+          "answer": "",
+          "error": "404 Client Error: Not Found for url: http://127.0.0.1:11434/api/chat"
+        },
+        {
+          "model": "gemma3:4b",
+          "test": "evaluate_quadratic_answer",
+          "latency_sec": null,
+          "response_length": 0,
+          "quality_score": 0.0,
+          "answer": "",
+          "error": "404 Client Error: Not Found for url: http://127.0.0.1:11434/api/chat"
+        }
+      ]
+    },
+    {
+      "model": "llama3.2:3b",
+      "tests": [
+        {
+          "model": "llama3.2:3b",
+          "test": "explain_derivative",
+          "latency_sec": null,
+          "response_length": 0,
+          "quality_score": 0.0,
+          "answer": "",
+          "error": "404 Client Error: Not Found for url: http://127.0.0.1:11434/api/chat"
+        },
+        {
+          "model": "llama3.2:3b",
+          "test": "generate_quadratic_task",
+          "latency_sec": null,
+          "response_length": 0,
+          "quality_score": 0.0,
+          "answer": "",
+          "error": "404 Client Error: Not Found for url: http://127.0.0.1:11434/api/chat"
+        },
+        {
+          "model": "llama3.2:3b",
+          "test": "evaluate_quadratic_answer",
+          "latency_sec": null,
+          "response_length": 0,
+          "quality_score": 0.0,
+          "answer": "",
+          "error": "404 Client Error: Not Found for url: http://127.0.0.1:11434/api/chat"
+        }
+      ]
+    }
+  ],
+  "summary": [
+    {
+      "model": "qwen3:4b",
+      "avg_latency_sec": 13.35,
+      "avg_quality_score": 66.7,
+      "tests": 3
+    },
+    {
+      "model": "gemma3:4b",
+      "avg_latency_sec": null,
+      "avg_quality_score": 0.0,
+      "tests": 3
+    },
+    {
+      "model": "llama3.2:3b",
+      "avg_latency_sec": null,
+      "avg_quality_score": 0.0,
+      "tests": 3
+    }
+  ]
+}
